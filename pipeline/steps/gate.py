@@ -18,7 +18,32 @@ Trả về dict: decision, n_errors, n_warn_images, n_images, warn_ratio (làm t
 """
 from ..common import ERROR, WARN  # noqa: F401
 
-
 def decide(issues, image_stems, cfg, reviewed=frozenset()):
-    # TODO
-    raise NotImplementedError("gate chưa làm")
+    stems = set(image_stems)                       # tập tên ảnh, để kiểm "in" nhanh
+    hold_at = cfg["gate"]["warn_ratio_hold"]       # 0.10, lấy từ cfg, không viết cứng
+    n_errors = sum(1 for i in issues if i.severity == ERROR)
+    warn_images = {i.image for i in issues
+                   if i.severity == WARN            # chỉ cảnh báo
+                   and i.image in stems             # bỏ "<dataset>", "data.yaml", ảnh đã xoá
+                   and i.image not in reviewed}     # bỏ ảnh người đã duyệt
+    n_warn_images = len(warn_images)
+    n_images = len(stems)
+    warn_ratio = round(n_warn_images / n_images, 4) if n_images else 0.0
+    if n_errors > 0:
+        decision = "Rework"
+        reasons = [f"còn {n_errors} lỗi bắt buộc (ERROR): phải sửa trước khi xuất"]
+    elif warn_ratio >= hold_at:                     # ">=" vì đúng 10% vẫn là Hold
+        decision = "Hold"
+        reasons = [f"{n_warn_images}/{n_images} ảnh ({warn_ratio:.1%}) còn cảnh báo "
+                   f"chưa người duyệt, >= ngưỡng {hold_at:.0%}"]
+    else:
+        decision = "Release"
+        reasons = [f"không còn lỗi bắt buộc; {n_warn_images}/{n_images} ảnh "
+                   f"({warn_ratio:.1%}) còn cảnh báo, < ngưỡng {hold_at:.0%}"]
+
+    return {"decision": decision, "n_errors": n_errors, "n_warn_images": n_warn_images,
+            "n_images": n_images, "warn_ratio": warn_ratio, "reasons": reasons}
+
+
+
+
