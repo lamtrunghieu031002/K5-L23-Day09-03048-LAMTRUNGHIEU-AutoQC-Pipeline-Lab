@@ -54,7 +54,22 @@ Unit test `test_error_cannot_be_hidden_by_reviewed` bảo đảm lỗi ERROR kh�
 3. **Nhầm lớp mà model lớn cũng nhầm** (car/truck/bus giống nhau): second_opinion chỉ cờ khi model **khác** nhãn. Nếu cả nhãn lẫn yolo26l cùng gọi một chiếc truck là car thì không có cảnh báo. Calib có 1/6 WRONG_CLASS bị bỏ sót (recall 0,83), và lớp truck/bus chỉ có 41/32 box (`class_stats.csv`), nên rất khó phát hiện.
 
 ## 5. Train: raw vs clean (tùy chọn, chấm riêng)
-Chưa chạy tại thời điểm commit này. Phần train chạy trên Google Colab (máy cá nhân không có GPU): yolo26n, 20 epoch, seed 0 và 1, cùng `gold_val` và cùng `test` 100 ảnh. Mục này sẽ được cập nhật bằng `comparison.md` sau khi có `submission/results/`.
+Train trên Google Colab (T4) bằng `scripts/train_compare.py`: **yolo26n.pt, 20 epoch, imgsz 640, batch 16, seed 0 và 1**. Hai biến thể dùng cùng val (`gold_val`, 40 ảnh) và cùng test (`data/test`, 100 ảnh nhãn người); chỉ khác dữ liệu train. Bảng dưới trích từ `submission/results/comparison.md`:
+
+| biến thể | #ảnh train | số seed | mAP50 (TB ± độ lệch) | mAP50-95 (TB ± độ lệch) | precision (TB ± độ lệch) | recall (TB ± độ lệch) |
+|---|---|---|---|---|---|---|
+| raw | 224 | 2 | 0.726 ± 0.000 | 0.512 ± 0.004 | 0.764 ± 0.061 | 0.649 ± 0.028 |
+| clean | 202 | 2 | 0.701 ± 0.025 | 0.487 ± 0.008 | 0.759 ± 0.003 | 0.625 ± 0.019 |
+
+**Chênh lệch so với nhiễu.** mAP50 (clean − raw) = **−0,025**, xấp xỉ đúng bằng độ lệch giữa 2 seed của clean (0,025): riêng clean đã dao động từ 0,683 đến 0,718. Vì vậy **chưa kết luận được** clean tốt hơn hay kém hơn raw ở mAP50.
+Ở mAP50-95, chênh −0,024 lớn hơn độ lệch giữa seed (0,004 và 0,008), nên có dấu hiệu clean thấp hơn. Nhưng chỉ có 2 seed, nên đây là dấu hiệu, chưa phải kết luận.
+Kết luận trung thực: **thí nghiệm này không cho thấy dữ liệu sau pipeline làm model tốt hơn.**
+Theo lớp (AP50, seed 0/1), phần chênh dồn gần hết vào **truck**: raw 0,657/0,640, clean 0,590/0,486. Person gần như bằng nhau (raw 0,813/0,832, clean 0,816/0,830). Bus tương đương (raw 0,681/0,709, clean 0,726/0,681). Truck cũng là lớp dao động mạnh nhất giữa 2 seed của clean (0,10).
+
+**Giả thuyết và cách kiểm:**
+1. **Rò rỉ test thổi phồng điểm của raw.** Pipeline phát hiện 5 ảnh `LEAK_TEST` trong raw (trùng `test_009`, `test_033`, `test_039`, `test_044`, `test_085`). Raw đã được train trên chính 5/100 ảnh test, còn clean thì không. *Cách kiểm:* đánh giá lại cả 2 model trên 95 ảnh test còn lại (bỏ 5 ảnh rò rỉ), rồi so lại chênh lệch.
+2. **Clean ít ảnh hơn và nhãn vẫn chủ yếu là nhãn máy.** Clean có 202 ảnh so với 224 (trong 22 ảnh bị loại, 8 ảnh là bản trùng byte, không thêm thông tin). Người mới duyệt 80/125 ảnh của hàng đợi, nên còn 38 ảnh có cảnh báo. Autofix xoá 20 dòng nhãn, có thể làm mất vật thật. *Cách kiểm:* so số box truck trong `clean_v1` và raw; train thêm biến thể `oracle` (nhãn người) làm chặn trên.
+3. **Truck hiếm và tập test nhỏ.** Truck chỉ có 41 box trong train (`class_stats.csv`), test lại chỉ 100 ảnh, nên AP của truck rất nhạy với vài box. Một cảnh báo WRONG_CLASS car↔truck còn sót (điểm mù 3 ở mục 4) cũng đủ làm lệch. *Cách kiểm:* chạy ≥ 5 seed để ước lượng nhiễu đáng tin hơn; đếm số truck trong test; xem `ap50_per_class` của từng seed.
 
 ## 6. Quyết định và ghi chú AI
 **(a) Quyết định: HOLD.** Dataset `clean_v1` chỉ là bản nháp để thử nghiệm, chưa phát hành. Có 2 cách để thành Release:
